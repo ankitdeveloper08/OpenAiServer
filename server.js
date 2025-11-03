@@ -12,7 +12,7 @@ app.use(cors());
 
 const PORT = 5000;
 
-const OPENROUTER_API_KEY = "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";
+const OPENROUTER_API_KEY = "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";
 
 const DEFAULT_MODEL = "meta-llama/llama-3-8b-instruct";
 
