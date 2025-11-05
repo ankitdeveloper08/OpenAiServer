@@ -1,24 +1,45 @@
 import express from "express";
-import fetch from "node-fetch";
-import dotenv from "dotenv";
 import cors from "cors";
+import dotenv from "dotenv";
+import fetch from "node-fetch";
+import OpenAI from "openai";
 import { Readable } from "stream";
+import { config } from "./agent/agentConfig.js";
+import { loadDocs, askDocsStream } from "./index.js";
 
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+
+// Increase body-parser limits to avoid PayloadTooLargeError for large requests
+app.use(express.json({ limit: "5mb" })); // adjust as needed: "1mb", "5mb", "10mb"
+app.use(express.urlencoded({ limit: "5mb", extended: true }));
+
 app.use(cors());
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const PORT = process.env.PORT || 5000;
 
-const PORT = 5000;
+let vectorStore;
 
-const OPENROUTER_API_KEY = "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";
+// ✅ Load documents on startup
+(async () => {
+  try {
+    console.log("📚 Loading docs...");
+    vectorStore = await loadDocs();
+    console.log("✅ Docs loaded successfully.");
+  } catch (err) {
+    console.error("❌ Failed to load docs on startup:", err);
+  }
+})();
 
-const DEFAULT_MODEL = "meta-llama/llama-3-8b-instruct";
-
+// ===========================================================
+// 🔹 1️⃣ General Chat (OpenRouter) — Streaming
+// ===========================================================
 app.post("/v1/chat/completions", async (req, res) => {
   const { model, messages } = req.body;
-  console.log("📩 Incoming stream request:", { model, messages });
+  console.log("📩 Incoming general chat stream request:", { model });
 
   try {
     res.setHeader("Content-Type", "text/event-stream");
@@ -28,11 +49,11 @@ app.post("/v1/chat/completions", async (req, res) => {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${config.openRouterKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: model || DEFAULT_MODEL,
+        model: model || config.defaultModel,
         messages,
         stream: true,
       }),
@@ -40,13 +61,12 @@ app.post("/v1/chat/completions", async (req, res) => {
 
     if (!response.ok || !response.body) {
       const text = await response.text();
-      console.error("❌ OpenRouter returned error:", text);
+      console.error("❌ OpenRouter error:", text);
       res.write(`data: ${JSON.stringify({ error: { message: text } })}\n\n`);
       res.end();
       return;
     }
 
-    // ✅ Convert the Web stream to Node stream
     const readable =
       typeof response.body.getReader === "function"
         ? Readable.fromWeb(response.body)
@@ -85,6 +105,43 @@ app.post("/v1/chat/completions", async (req, res) => {
     if (!res.headersSent) {
       res.write(`data: ${JSON.stringify({ error: { message: err.message } })}\n\n`);
       res.end();
+    }
+  }
+});
+
+// ===========================================================
+// 🔹 2️⃣ Document Q&A — Use askDocsStream (Docs-first)
+// ===========================================================
+app.post("/ask-docs", async (req, res) => {
+  const { question } = req.body;
+  if (!question) {
+    res.status(400).json({ error: "Missing question" });
+    return;
+  }
+
+  try {
+    // Ensure vector store is loaded
+    if (!vectorStore) {
+      console.log("📚 Vector store not ready — loading now...");
+      vectorStore = await loadDocs();
+      console.log("✅ Vector store loaded.");
+    }
+
+    // Delegate to askDocsStream which handles SSE headers and streaming response
+    await askDocsStream(question, vectorStore, res);
+    // askDocsStream is responsible for ending the response
+  } catch (err) {
+    console.error("❌ /ask-docs error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    } else {
+      try {
+        res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
+      } catch (e) {
+        // swallow
+      }
     }
   }
 });
