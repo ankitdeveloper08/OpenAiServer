@@ -6,16 +6,34 @@ import OpenAI from "openai";
 import { Readable } from "stream";
 import { config } from "./agent/agentConfig.js";
 import { loadDocs, askDocsStream } from "./index.js";
+import authRoutes from "./routes/authRoutes.js";
+import { authenticate } from "./middleware/auth.js";
+import chatRoutes from "./routes/chatRoutes.js";
+import messageRoutes from "./routes/messageRoutes.js";
+
 
 dotenv.config();
 
 const app = express();
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:5173",
+    ],
+    credentials: true,
+  })
+);
 
+app.use(express.json());
 // Increase body-parser limits to avoid PayloadTooLargeError for large requests
 app.use(express.json({ limit: "5mb" })); // adjust as needed: "1mb", "5mb", "10mb"
+app.use("/api/auth", authRoutes);
+app.use("/api/chats", chatRoutes);
+app.use("/api/messages", messageRoutes);
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
-app.use(cors());
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -37,7 +55,10 @@ let vectorStore;
 // ===========================================================
 // 🔹 1️⃣ General Chat (OpenRouter) — Streaming
 // ===========================================================
-app.post("/v1/chat/completions", async (req, res) => {
+app.post(
+   "/v1/chat/completions",
+  authenticate,
+  async (req, res) => {
   const { model, messages } = req.body;
   console.log("📩 Incoming general chat stream request:", { model });
 
@@ -112,7 +133,10 @@ app.post("/v1/chat/completions", async (req, res) => {
 // ===========================================================
 // 🔹 2️⃣ Document Q&A — Use askDocsStream (Docs-first)
 // ===========================================================
-app.post("/ask-docs", async (req, res) => {
+app.post(
+  "/ask-docs",
+  authenticate,
+  async (req, res) => {
   const { question } = req.body;
   if (!question) {
     res.status(400).json({ error: "Missing question" });
