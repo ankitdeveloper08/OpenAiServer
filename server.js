@@ -19,7 +19,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:3000",
-      "http://localhost:3001",
+      "https://nvchatboard-lm36.onrender.com",
       "http://localhost:5173",
     ],
     credentials: true,
