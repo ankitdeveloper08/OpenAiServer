@@ -37,6 +37,7 @@ export const register = async (req, res) => {
         name,
         email,
         passwordHash,
+        role: "USER",
       },
     });
 
@@ -47,6 +48,7 @@ export const register = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -97,6 +99,7 @@ export const login = async (req, res) => {
       {
         id: user.id,
         email: user.email,
+        role: user.role,
       },
       process.env.JWT_SECRET,
       {
@@ -112,6 +115,7 @@ export const login = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -158,14 +162,21 @@ export const googleLogin = async (req, res) => {
           name,
           email,
           passwordHash: "", // Google users don't use password
+          role: "USER",
         },
       });
     }
+    console.log({
+  id: user.id,
+  email: user.email,
+  role: user.role,
+});
 
     const token = jwt.sign(
       {
         id: user.id,
         email: user.email,
+        role: user.role,
       },
       process.env.JWT_SECRET,
       {
@@ -181,6 +192,7 @@ export const googleLogin = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -278,6 +290,30 @@ export const resetPassword = async (req, res) => {
     console.error("Reset Password Error:", error);
 
     return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getMe = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+    });
+
+    res.json({
+      success: true,
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({
       success: false,
       message: error.message,
     });
