@@ -23,6 +23,7 @@ model User {
   createdAt        DateTime @default(now())
 
   chats            Chat[]
+  promptUsages     PromptUsage[]
 }
 
 model Chat {
@@ -44,4 +45,18 @@ model ChatMessage {
   createdAt   DateTime  @default(now())
 
   chat        Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+}
+
+model PromptUsage {
+  id          String   @id @default(uuid())
+  userId      String
+  promptCount Int      @default(0)
+  date        DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
 }
