@@ -1,6 +1,6 @@
 import prisma from "../prisma/prismaClient.js";
 
-const DAILY_LIMIT = Number(process.env.DAILY_PROMPT_LIMIT) || 6;
+const DAILY_LIMIT = Number(process.env.DAILY_PROMPT_LIMIT) || 39;
 
 export const checkPromptLimit = async (req, res, next) => {
   try {
