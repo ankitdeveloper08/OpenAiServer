@@ -6,7 +6,7 @@ import { Document } from "langchain/document";
 import { config } from "./agent/agentConfig.js";
 
 const require = createRequire(import.meta.url);
-const pdfParse = require(path.resolve("node_modules/pdf-parse/lib/pdf-parse.js"));
+const pdfParse = require("pdf-parse");
 
 // phrases to suppress if model emits them at the start (kept for reference)
 const leadingPhrases = [
