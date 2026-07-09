@@ -4,6 +4,7 @@ import mammoth from "mammoth";
 import { createRequire } from "module";
 import { Document } from "langchain/document";
 import { config } from "./agent/agentConfig.js";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
@@ -11,7 +12,7 @@ const pdfParse = require("pdf-parse");
 // phrases to suppress if model emits them at the start (kept for reference)
 const leadingPhrases = [
   "I don’t know based on the provided documents.",
-  "I don't know based on the provided documents."
+  "I don't know based on the provided documents.",
 ];
 
 // ✅ Simple vector store
@@ -53,7 +54,9 @@ class SimpleVectorStore {
         const threshold =
           topScore > 0.9 ? 0.75 : topScore > 0.8 ? 0.7 : minScore;
 
-        const filtered = scores.filter((s) => s.score >= threshold).slice(0, topK);
+        const filtered = scores
+          .filter((s) => s.score >= threshold)
+          .slice(0, topK);
         const topMatches = scores.slice(0, topK);
 
         const chosen = filtered.length > 0 ? filtered : topMatches;
@@ -62,7 +65,7 @@ class SimpleVectorStore {
         console.log(
           `🧮 Retrieved ${topDocs.length} docs (used ${
             filtered.length > 0 ? "filtered" : "fallback topK"
-          }). topScore=${topScore.toFixed(4)}, threshold=${threshold.toFixed(4)}`
+          }). topScore=${topScore.toFixed(4)}, threshold=${threshold.toFixed(4)}`,
         );
 
         return topDocs;
@@ -123,11 +126,19 @@ export async function loadDocs() {
     }
   }
 
-  const chunks = allText.match(/[\s\S]{1,1000}/g) || [];
-  const documents = chunks.map((t) => new Document({ pageContent: t }));
+  const splitter = new RecursiveCharacterTextSplitter({
+    chunkSize: 1000,
+    chunkOverlap: 200,
+  });
 
-  console.log(`✅ Loaded ${documents.length} chunks from ${files.length} files.`);
-  console.log("🧠 Example doc snippet:", documents[0]?.pageContent?.slice(0, 200));
+  const documents = await splitter.createDocuments([allText]);
+  console.log(
+    `✅ Loaded ${documents.length} chunks from ${files.length} files.`,
+  );
+  console.log(
+    "🧠 Example doc snippet:",
+    documents[0]?.pageContent?.slice(0, 200),
+  );
 
   const embeddings = [];
   for (const doc of documents) {
@@ -151,10 +162,16 @@ function stripLeadingPhrases(text) {
   t = t.replace(/^\s+/, "");
 
   // 1) Remove common full phrases and variants (I don't / I don’t / I do not / don't / do not)
-  t = t.replace(/^(?:I\s*(?:don'?t|don\u2019t|do\s+not|do not|do|dont|i\s+don))\b[\s,.:;!()-]*/i, "");
+  t = t.replace(
+    /^(?:I\s*(?:don'?t|don\u2019t|do\s+not|do not|do|dont|i\s+don))\b[\s,.:;!()-]*/i,
+    "",
+  );
 
   // 2) Remove leading "know based on..." regardless of whether "I don't" arrived
-  t = t.replace(/^(?:know(?:\s+based\s+on\s+the\s+provided\s+documents\.?)?|\bknow\b)[\s,.:;!()-]*/i, "");
+  t = t.replace(
+    /^(?:know(?:\s+based\s+on\s+the\s+provided\s+documents\.?)?|\bknow\b)[\s,.:;!()-]*/i,
+    "",
+  );
 
   // 3) Remove contracted suffixes that might arrive split (e.g. "n't", "'t", "’t") at the start
   t = t.replace(/^(?:n'?t|['\u2019`’]t|n\u2019t)\b[\s,.:;!()-]*/i, "");
@@ -171,21 +188,22 @@ function stripLeadingPhrases(text) {
 // Heuristic: detect greetings / chitchat so they go to OpenAI
 function isLikelyChitchat(question) {
   if (!question) return false;
+
   const s = question.trim().toLowerCase();
 
-  // common greetings and short social messages
-  const greetingRegex = /^(hi|hello|hey|iya|hallo|good (morning|afternoon|evening)|thanks|thank you|bye|goodbye|sup|yo|what's up|whats up)[\s!.,?]*$/i;
-  if (greetingRegex.test(s)) return true;
+  const greetings = [
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "thanks",
+    "thank you",
+    "bye",
+  ];
 
-  // single short token (like "hi", "hey", "ok")
-  const tokens = s.split(/\s+/).filter(Boolean);
-  if (tokens.length === 1 && tokens[0].length <= 4) return true;
-
-  // very short non-question (no question words and length small)
-  const questionWords = /\b(who|what|when|where|why|how|which|whom|whose)\b/i;
-  if (s.length <= 10 && !questionWords.test(s)) return true;
-
-  return false;
+  return greetings.includes(s);
 }
 
 // 🗣️ Ask a question (with streaming + smarter batching + start-timeout)
@@ -194,7 +212,9 @@ function isLikelyChitchat(question) {
 export async function askDocsStream(question, vectorStore, res) {
   // --- NEW: chitchat detection --- //
   if (isLikelyChitchat(question)) {
-    console.log("🫧 Detected chitchat/greeting — routing to OpenAI general prompt.");
+    console.log(
+      "🫧 Detected chitchat/greeting — routing to OpenAI general prompt.",
+    );
     // Bypass embeddings/retrieval for greetings
     const source = "openai";
     const prompt = `
@@ -212,64 +232,82 @@ ${question}
   // compute scores once (only for non-chitchat)
   const scores = await vectorStore.getScoresForQuery(question);
   const topScore = scores[0]?.score || 0;
-  console.log("🔎 Document scores (top first):", scores.slice(0, Math.max(config.topK || 5, 5)).map(s => s.score.toFixed(4)));
+  console.log(
+    "🔎 Document scores (top first):",
+    scores
+      .slice(0, Math.max(config.topK || 5, 5))
+      .map((s) => s.score.toFixed(4)),
+  );
   console.log(`🧮 topScore=${topScore.toFixed(4)}`);
-
-  const MIN_SCORE_FOR_DOCS = 0.25;
-
   let source = "docs";
   let prompt = "";
 
-  if (topScore < MIN_SCORE_FOR_DOCS) {
-    source = "openai";
-    prompt = `
-No relevant document context was found.
+  const topK = config.topK || 8;
 
-Please answer using general knowledge:
-${question}
-`;
-    console.log("🧭 Low retrieval confidence — using OpenAI general prompt (no docs-only instruction).");
-  } else {
-    const topK = config.topK || 5;
-    const threshold = topScore > 0.9 ? 0.75 : topScore > 0.8 ? 0.7 : 0.2;
-    const filtered = scores.filter((s) => s.score >= threshold).slice(0, topK);
-    const chosen = filtered.length > 0 ? filtered : scores.slice(0, topK);
-    const relevantDocs = chosen.map((s) => s.doc);
-    const context = relevantDocs.map((d) => d.pageContent).join("\n\n");
+  const relevantDocs = scores.slice(0, topK).map((s) => s.doc);
 
-    source = "docs";
-    prompt = `
-You are a helpful assistant. Answer the question below strictly based on the given document context.
+  const context = relevantDocs.map((d) => d.pageContent).join("\n\n");
 
-Document Context:
+  prompt = `
+You are AK AI Assistant.
+
+Use the uploaded documents as the PRIMARY source.
+
+If the answer exists in the documents:
+- Answer ONLY from the documents.
+- Do not add information from your own knowledge.
+
+If the answer does not exist in the documents:
+- Answer using your own knowledge.
+
+IMPORTANT FORMAT RULES:
+- Use proper spacing.
+- Preserve blank lines.
+- Use numbered lists when appropriate.
+- Use bullet points for explanations.
+- Do NOT merge words together.
+- Return clean Markdown.
+
+DOCUMENT CONTEXT
+----------------
 ${context}
 
-Question: ${question}
+QUESTION
+--------
+${question}
 
-If the answer is not clearly stated, respond exactly with:
-"I don’t know based on the provided documents."
+At the end write only one of these:
+
+Source: Uploaded Documents
+
+or
+
+Source: General Knowledge
 `;
-    console.log(`🧭 Using docs. Retrieved ${relevantDocs.length} docs. threshold=${threshold.toFixed(4)}`);
-  }
 
-  // use shared streaming helper
+  console.log(`🧭 Using ${relevantDocs.length} document chunks.`);
   await streamModelResponse(prompt, source, res);
 }
 
+// use shared streaming helper
+
 // Shared streaming helper to avoid duplication
 export async function streamModelResponse(prompt, source, res) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.openRouterKey}`,
+  const response = await fetch(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.openRouterKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model || "gpt-4o-mini",
+        stream: true,
+        messages: [{ role: "user", content: prompt }],
+      }),
     },
-    body: JSON.stringify({
-      model: config.model || "gpt-4o-mini",
-      stream: true,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  );
 
   if (!response.ok) {
     if (!res.writableEnded) {
@@ -278,8 +316,12 @@ export async function streamModelResponse(prompt, source, res) {
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
       } catch {}
-      try { res.write(`data: Error: ${response.statusText}\n\n`); } catch {}
-      try { res.end(); } catch {}
+      try {
+        res.write(`data: Error: ${response.statusText}\n\n`);
+      } catch {}
+      try {
+        res.end();
+      } catch {}
     }
     return;
   }
@@ -290,8 +332,8 @@ export async function streamModelResponse(prompt, source, res) {
   // Streaming control params
   const STREAM_START_THRESHOLD = 128;
   const START_TIMEOUT_MS = 1000;
-  const MIN_SEND_DELTA = 8;
-  const FLUSH_INTERVAL_MS = 120;
+  const MIN_SEND_DELTA = 30;
+  const FLUSH_INTERVAL_MS = 60;
 
   // Shared streaming state
   let buffer = "";
@@ -374,11 +416,15 @@ export async function streamModelResponse(prompt, source, res) {
     if (ended || res.writableEnded || clientClosed) return;
     if (!startedStreaming) {
       const stripped = stripLeadingPhrases(buffer);
-      if (stripped.trim().length >= STREAM_START_THRESHOLD || (force && stripped.trim().length > 0)) {
+      if (
+        stripped.trim().length >= STREAM_START_THRESHOLD ||
+        (force && stripped.trim().length > 0)
+      ) {
         startedStreaming = true;
         buffer = stripped;
-        const toSend = buffer.slice(lastSentLen).trim();
-        if (toSend) {
+        const toSend = buffer.slice(lastSentLen);
+
+        if (toSend.length > 0) {
           sendChunk(toSend);
           lastSentLen = buffer.length;
         }
@@ -391,9 +437,16 @@ export async function streamModelResponse(prompt, source, res) {
       const delta = newLen - lastSentLen;
       if (delta >= MIN_SEND_DELTA || force) {
         let chunk = buffer.slice(lastSentLen);
-        chunk = stripLeadingPhrases(chunk);
-        chunk = chunk.trim();
-        if (chunk) sendChunk(chunk);
+
+        // Only strip the leading fallback phrase once
+        if (lastSentLen === 0) {
+          chunk = stripLeadingPhrases(chunk);
+        }
+
+        if (chunk.length > 0) {
+          sendChunk(chunk);
+        }
+
         lastSentLen = buffer.length;
       }
     }
@@ -412,7 +465,9 @@ export async function streamModelResponse(prompt, source, res) {
           const { done: rDone, value } = await reader.read();
           if (rDone) break;
           const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n").filter((line) => line.trim().startsWith("data: "));
+          const lines = chunk
+            .split("\n")
+            .filter((line) => line.trim().startsWith("data: "));
           for (const line of lines) {
             if (clientClosed) break;
             const dataStr = line.replace("data: ", "").trim();
@@ -434,8 +489,12 @@ export async function streamModelResponse(prompt, source, res) {
       } finally {
         clearTimers();
         if (!ended && !res.writableEnded && !clientClosed) {
-          try { safeWrite("data: [DONE]\n\n"); } catch {}
-          try { res.end(); } catch {}
+          try {
+            safeWrite("data: [DONE]\n\n");
+          } catch {}
+          try {
+            res.end();
+          } catch {}
         }
         ended = true;
         res.removeListener("close", onClientClose);
@@ -456,7 +515,9 @@ export async function streamModelResponse(prompt, source, res) {
         break;
       }
       const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n").filter((line) => line.trim().startsWith("data: "));
+      const lines = chunk
+        .split("\n")
+        .filter((line) => line.trim().startsWith("data: "));
       for (const line of lines) {
         if (clientClosed) break;
         const dataStr = line.replace("data: ", "").trim();
@@ -490,8 +551,12 @@ export async function streamModelResponse(prompt, source, res) {
     }
 
     if (!ended && !res.writableEnded && !clientClosed) {
-      try { safeWrite("data: [DONE]\n\n"); } catch {}
-      try { res.end(); } catch {}
+      try {
+        safeWrite("data: [DONE]\n\n");
+      } catch {}
+      try {
+        res.end();
+      } catch {}
     }
     ended = true;
     res.removeListener("close", onClientClose);
