@@ -12,7 +12,7 @@ import chatRoutes from "./routes/chatRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import { checkPromptLimit } from "./middleware/promptLimiter.js";
 import promptRoutes from "./routes/promptRoutes.js";
-
+import documentRoutes from "./routes/documentRoutes.js";
 
 dotenv.config();
 
@@ -28,7 +28,6 @@ app.use(
   }),
 );
 
-app.use(express.json());
 // Increase body-parser limits to avoid PayloadTooLargeError for large requests
 app.use(express.json({ limit: "5mb" })); // adjust as needed: "1mb", "5mb", "10mb"
 app.use("/api/auth", authRoutes);
@@ -36,6 +35,8 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api", promptRoutes);
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
+app.use("/api/documents", documentRoutes);
+app.use("/generated-files", express.static("generated-files"));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
