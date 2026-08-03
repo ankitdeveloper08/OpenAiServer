@@ -23,6 +23,7 @@ app.use(
       "http://localhost:3000",
       "https://nvchatboard-lm36.onrender.com",
       "http://localhost:5173",
+      "https://avaiassistant.onrender.com",
     ],
     credentials: true,
   }),
