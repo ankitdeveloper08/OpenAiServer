@@ -192,18 +192,97 @@ function isLikelyChitchat(question) {
   const s = question.trim().toLowerCase();
 
   const greetings = [
+    // Greetings
     "hi",
     "hello",
     "hey",
+    "hey there",
+    "hiya",
+    "hi there",
     "good morning",
     "good afternoon",
     "good evening",
+    "good night",
+
+    // Introductions
+    "how are you",
+    "how are you doing",
+    "how's it going",
+    "how have you been",
+    "what's up",
+    "whats up",
+    "sup",
+
+    // Thanks
     "thanks",
     "thank you",
+    "thanks a lot",
+    "thank you so much",
+    "many thanks",
+    "appreciate it",
+    "much appreciated",
+
+    // Farewell
     "bye",
+    "goodbye",
+    "see you",
+    "see you later",
+    "catch you later",
+    "take care",
+    "have a nice day",
+    "have a good day",
+    "have a great day",
+    "have a good night",
+
+    // Polite
+    "please",
+    "ok",
+    "okay",
+    "alright",
+    "cool",
+    "awesome",
+    "great",
+    "nice",
+    "perfect",
+
+    // Identity
+    "who are you",
+    "what are you",
+    "what is your name",
+    "your name",
+    "introduce yourself",
+
+    // Help
+    "help",
+    "can you help me",
+    "i need help",
+    "assist me",
+
+    // Small talk
+    "how old are you",
+    "who made you",
+    "who created you",
+    "who built you",
+    "tell me about yourself",
+
+    // Positive
+    "good job",
+    "well done",
+    "excellent",
+    "amazing",
+    "awesome work",
+    "you're awesome",
+    "you are awesome",
+
+    // Negative
+    "sorry",
+    "my bad",
+    "oops",
+    "excuse me",
   ];
 
-  return greetings.includes(s);
+  // return greetings.includes(s);
+  return greetings.some(g => s === g || s.includes(g));
 }
 
 // 🗣️ Ask a question (with streaming + smarter batching + start-timeout)
