@@ -171,7 +171,7 @@ Return only the requested content.
       .trim();
 
     // Generate filename
-    const fileName = `NV_AI_${Date.now()}`;
+    const fileName = `AV_AI_${Date.now()}`;
 
     // Create document
     const document = await createDocument(outputType, aiContent, fileName);
