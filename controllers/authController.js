@@ -103,7 +103,7 @@ export const login = async (req, res) => {
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "1d",
+        expiresIn: "6h",
       }
     );
 
@@ -180,7 +180,7 @@ export const googleLogin = async (req, res) => {
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "1d",
+        expiresIn: "6h",
       }
     );
 
